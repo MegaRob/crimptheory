@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crimptheory Sign Up</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the Inter font and general body styling */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Full viewport height */
+            margin: 0;
+            padding: 1rem; /* Padding around the content */
+            box-sizing: border-box; /* Include padding in element's total width and height */
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md mx-auto">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Sign Up for Crimptheory</h2>
+
+        <!-- Message Display Area -->
+        <div id="message" class="hidden p-3 mb-4 text-sm text-center rounded-lg" role="alert"></div>
+
+        <form id="signup-form" class="space-y-4">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+                <input type="email" id="email" name="email" required autocomplete="email"
+                       class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm placeholder-gray-400">
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="new-password"
+                       class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm placeholder-gray-400">
+                <p class="text-xs text-gray-500 mt-1">Password must be at least 6 characters long.</p>
+            </div>
+            <div>
+                <label for="confirm-password" class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                <input type="password" id="confirm-password" name="confirm-password" required autocomplete="new-password"
+                       class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm placeholder-gray-400">
+            </div>
+            <button type="submit" id="signup-button"
+                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+                <span id="button-text">Sign Up</span>
+                <svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </button>
+        </form>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import the functions you need from the Firebase SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration from the environment
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; // Use default if not provided
+
+        // Initialize Firebase
+        let app;
+        let auth;
+        let db;
+        let userId;
+
+        // Function to display messages to the user
+        function displayMessage(message, type = 'info') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = message;
+            messageDiv.className = `p-3 mb-4 text-sm text-center rounded-lg ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+            messageDiv.classList.remove('hidden');
+        }
+
+        // Function to hide messages
+        function hideMessage() {
+            document.getElementById('message').classList.add('hidden');
+        }
+
+        // Function to show/hide loading spinner
+        function setLoading(isLoading) {
+            const buttonText = document.getElementById('button-text');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            if (isLoading) {
+                buttonText.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+                document.getElementById('signup-button').disabled = true;
+            } else {
+                buttonText.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+                document.getElementById('signup-button').disabled = false;
+            }
+        }
+
+        // Initialize Firebase and authenticate user
+        async function initializeFirebaseAndAuth() {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Authenticate with custom token if available, otherwise sign in anonymously
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                    console.log('Signed in with custom token.');
+                } else {
+                    await signInAnonymously(auth);
+                    console.log('Signed in anonymously.');
+                }
+                userId = auth.currentUser?.uid || crypto.randomUUID();
+                console.log('Firebase initialized and user authenticated. User ID:', userId);
+
+            } catch (error) {
+                console.error("Error initializing Firebase or authenticating:", error);
+                displayMessage("Failed to initialize the application. Please try again.", "error");
+            }
+        }
+
+        // Handle sign up form submission
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize Firebase when the DOM is loaded
+            await initializeFirebaseAndAuth();
+
+            const signupForm = document.getElementById('signup-form');
+            signupForm.addEventListener('submit', async (e) => {
+                e.preventDefault(); // Prevent default form submission
+
+                hideMessage(); // Clear previous messages
+                setLoading(true); // Show loading spinner
+
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                const confirmPassword = document.getElementById('confirm-password').value;
+
+                if (password !== confirmPassword) {
+                    displayMessage('Passwords do not match.', 'error');
+                    setLoading(false);
+                    return;
+                }
+
+                if (password.length < 6) {
+                    displayMessage('Password must be at least 6 characters long.', 'error');
+                    setLoading(false);
+                    return;
+                }
+
+                try {
+                    // Create user with email and password
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    console.log('User signed up successfully:', userCredential.user);
+                    displayMessage('Account created successfully! You can now log in.', 'success');
+                    signupForm.reset(); // Clear the form
+
+                } catch (error) {
+                    console.error('Error signing up:', error);
+                    let errorMessage = 'An unknown error occurred.';
+                    switch (error.code) {
+                        case 'auth/email-already-in-use':
+                            errorMessage = 'This email address is already in use.';
+                            break;
+                        case 'auth/invalid-email':
+                            errorMessage = 'The email address is not valid.';
+                            break;
+                        case 'auth/operation-not-allowed':
+                            errorMessage = 'Email/password sign-in is not enabled. Please check your Firebase settings.';
+                            break;
+                        case 'auth/weak-password':
+                            errorMessage = 'The password is too weak. Please choose a stronger password.';
+                            break;
+                        default:
+                            errorMessage = error.message;
+                            break;
+                    }
+                    displayMessage(`Sign up failed: ${errorMessage}`, 'error');
+                } finally {
+                    setLoading(false); // Hide loading spinner
+                }
+            });
+        });
+    </script>
+</body>
+</html>
