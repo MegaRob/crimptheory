@@ -104,6 +104,13 @@
         // Initialize Firebase and authenticate user
         async function initializeFirebaseAndAuth() {
             try {
+                // Check if firebaseConfig is empty
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase configuration is empty. Make sure __firebase_config is properly set.");
+                    displayMessage("Firebase configuration missing. Cannot initialize application.", "error");
+                    return; // Stop execution if config is missing
+                }
+
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
@@ -121,7 +128,19 @@
 
             } catch (error) {
                 console.error("Error initializing Firebase or authenticating:", error);
-                displayMessage("Failed to initialize the application. Please try again.", "error");
+                let errorMessage = "Failed to initialize the application. Please try again.";
+
+                // More specific error messages for common Firebase initialization issues
+                if (error.code === 'app/no-app') {
+                    errorMessage = "Firebase app not found. Check your firebaseConfig.";
+                } else if (error.code === 'auth/network-request-failed') {
+                    errorMessage = "Network error during authentication. Check your internet connection.";
+                } else if (error.code === 'auth/invalid-credential') {
+                    errorMessage = "Authentication failed. Invalid credentials.";
+                } else if (error.code) {
+                    errorMessage = `Firebase Error (${error.code}): ${error.message}`;
+                }
+                displayMessage(errorMessage, "error");
             }
         }
 
