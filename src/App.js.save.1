@@ -1,0 +1,381 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
+
+// Define the global Firebase variables. These are provided by the Canvas environment.
+// For local development, you will replace these with your actual Firebase project's config.
+// For example:
+/*
+const firebaseConfig = {
+apiKey: "AIzaSyClyVPseAdcigHNsB2q4SmnopHZTOGmWmU",
+  authDomain: "crimp-theory.firebaseapp.com",
+  projectId: "crimp-theory",
+  storageBucket: "crimp-theory.firebasestorage.app",
+  messagingSenderId: "458855830956",
+  appId: "1:458855830956:web:810c1bee13fe34ba2f9609",
+  measurementId: "G-4R0SQYS3LS"
+};
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+*/
+
+// Current setup for Canvas environment (will be replaced for local dev)
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+
+function App() {
+  // State variables for Firebase instances and user data
+  const [app, setApp] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [db, setDb] = useState(null);
+  const [user, setUser] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [userProfile, setUserProfile] = useState({ name: '', age: '', city: '' });
+
+  // State variables for authentication forms
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Effect hook to initialize Firebase and set up authentication listener
+  useEffect(() => {
+    try {
+      // Initialize Firebase app
+      const firebaseApp = initializeApp(firebaseConfig);
+      setApp(firebaseApp);
+
+      // Get Auth and Firestore instances
+      const authInstance = getAuth(firebaseApp);
+      setAuth(authInstance);
+      const dbInstance = getFirestore(firebaseApp);
+      setDb(dbInstance);
+
+      // Sign in with custom token or anonymously if the token is not provided
+      const signIn = async () => {
+        try {
+          if (initialAuthToken) {
+            await signInWithCustomToken(authInstance, initialAuthToken);
+          } else {
+            await signInAnonymously(authInstance);
+          }
+        } catch (authError) {
+          console.error("Firebase authentication error during initialization:", authError);
+          // Provide more specific error message for operation-not-allowed
+          if (authError.code === 'auth/operation-not-allowed') {
+            setError("Firebase Authentication (e.g., Anonymous sign-in) is not enabled. Please check your Firebase project settings under Authentication > Sign-in method.");
+          } else {
+            setError("Failed to initialize authentication. Please try again: " + authError.message);
+          }
+        } finally {
+          setLoading(false); // Set loading to false once authentication attempt is made
+        }
+      };
+
+      signIn();
+
+      // Set up auth state change listener
+      const unsubscribe = onAuthStateChanged(authInstance, (currentUser) => {
+        if (currentUser) {
+          setUser(currentUser);
+          setUserId(currentUser.uid);
+          setError(''); // Clear any previous errors on successful auth
+        } else {
+          setUser(null);
+          setUserId(null);
+          setUserProfile({ name: '', age: '', city: '' }); // Clear profile on logout
+        }
+        setLoading(false); // Authentication state checked
+      });
+
+      // Cleanup subscription on unmount
+      return () => unsubscribe();
+    } catch (err) {
+      console.error("Error initializing Firebase:", err);
+      setError("Failed to initialize Firebase. Please check your configuration or console for errors.");
+      setLoading(false);
+    }
+  }, []); // Empty dependency array ensures this runs only once on mount
+
+  // Effect hook to fetch user profile data when user or db changes
+  useEffect(() => {
+    let unsubscribeProfile = () => {}; // Initialize for cleanup
+
+    if (db && userId && user) {
+      // Reference to the user's private document in Firestore
+      const userDocRef = doc(db, `artifacts/${appId}/users/${userId}/private/profile`);
+
+      // Set up real-time listener for the user's profile document
+      unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          // If the document exists, update the userProfile state
+          setUserProfile(docSnap.data());
+        } else {
+          // If the document does not exist, reset the userProfile state
+          setUserProfile({ name: '', age: '', city: '' });
+        }
+      }, (err) => {
+        console.error("Error fetching user profile:", err);
+        setError("Failed to load user data: " + err.message);
+      });
+    }
+
+    // Cleanup subscription on unmount or when dependencies change
+    return () => unsubscribeProfile();
+  }, [db, userId, user, appId]); // Dependencies: db, userId, user, and appId
+
+  // Handle user signup
+  const handleSignUp = async () => {
+    setError(''); // Clear previous errors
+    if (!auth) {
+      setError("Firebase Auth not initialized.");
+      return;
+    }
+    if (!email || !password) {
+      setError("Email and password are required for signup.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      // Firebase automatically logs in the user after signup
+      setEmail('');
+      setPassword('');
+      setError("Sign up successful! You are now logged in.");
+    } catch (err) {
+      console.error("Signup error:", err);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Sign up failed: Email/Password sign-in is not enabled. Please enable it in your Firebase console under Authentication > Sign-in method.");
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle user login
+  const handleLogin = async () => {
+    setError(''); // Clear previous errors
+    if (!auth) {
+      setError("Firebase Auth not initialized.");
+      return;
+    }
+    if (!email || !password) {
+      setError("Email and password are required for login.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setEmail('');
+      setPassword('');
+      setError("Login successful!");
+    } catch (err) {
+      console.error("Login error:", err);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Login failed: Email/Password sign-in is not enabled. Please enable it in your Firebase console under Authentication > Sign-in method.");
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle user logout
+  const handleLogout = async () => {
+    setError(''); // Clear previous errors
+    if (!auth) {
+      setError("Firebase Auth not initialized.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await signOut(auth);
+      setError("Logged out successfully!");
+    } catch (err) {
+      console.error("Logout error:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle saving user profile data to Firestore
+  const handleSaveProfile = async () => {
+    setError(''); // Clear previous errors
+    if (!db || !userId) {
+      setError("Database or user not ready. Please log in.");
+      return;
+    }
+    setLoading(true);
+    try {
+      // Reference to the user's private document
+      const userDocRef = doc(db, `artifacts/${appId}/users/${userId}/private/profile`);
+      // Set the document with the user profile data. 'setDoc' will create if it doesn't exist or overwrite if it does.
+      await setDoc(userDocRef, userProfile);
+      setError("Profile saved successfully!");
+    } catch (err) {
+      console.error("Error saving profile:", err);
+      setError("Failed to save profile: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle changes in the input fields for user profile
+  const handleProfileChange = (e) => {
+    const { name, value } = e.target;
+    setUserProfile((prevProfile) => ({ ...prevProfile, [name]: value }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+        <p className="text-xl text-gray-700">Loading application...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4 font-inter">
+      <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg">
+        <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
+          User Data App
+        </h1>
+
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <strong className="font-bold">Error!</strong>
+            <span className="block sm:inline ml-2">{error}</span>
+          </div>
+        )}
+
+        {user ? (
+          // Logged In View
+          <div>
+            <div className="text-center mb-6">
+              <p className="text-lg text-gray-700">
+                Welcome, <span className="font-semibold">{user.email || 'Anonymous User'}</span>!
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                Your User ID: <span className="font-mono text-xs break-all">{userId}</span>
+              </p>
+            </div>
+
+            <h2 className="text-2xl font-semibold text-gray-800 mb-4">Your Profile</h2>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={userProfile.name}
+                  onChange={handleProfileChange}
+                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="Your Name"
+                />
+              </div>
+              <div>
+                <label htmlFor="age" className="block text-sm font-medium text-gray-700">
+                  Age
+                </label>
+                <input
+                  type="number"
+                  id="age"
+                  name="age"
+                  value={userProfile.age}
+                  onChange={handleProfileChange}
+                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="Your Age"
+                />
+              </div>
+              <div>
+                <label htmlFor="city" className="block text-sm font-medium text-gray-700">
+                  City
+                </label>
+                <input
+                  type="text"
+                  id="city"
+                  name="city"
+                  value={userProfile.city}
+                  onChange={handleProfileChange}
+                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="Your City"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveProfile}
+              className="mt-6 w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-150 ease-in-out shadow-md"
+            >
+              Save Profile
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="mt-4 w-full bg-red-500 text-white py-3 px-4 rounded-lg hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-150 ease-in-out shadow-md"
+            >
+              Log Out
+            </button>
+          </div>
+        ) : (
+          // Logged Out View (Login/Signup Forms)
+          <div>
+            <div className="space-y-4 mb-6">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="your.email@example.com"
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  placeholder="********"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogin}
+              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-150 ease-in-out shadow-md mb-3"
+            >
+              Log In
+            </button>
+            <button
+              onClick={handleSignUp}
+              className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-150 ease-in-out shadow-md"
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;
