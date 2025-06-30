@@ -7,22 +7,22 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "firebase": "^11.9.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4",
-    "firebase": "^11.9.1"
+    "web-vitals": "^2.1.4"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4.3",
-    "postcss": "^8.4.31",
-    "autoprefixer": "^10.4.19",
-    "@craco/craco": "^7.1.0" 
+    "@craco/craco": "^7.1.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17"
   },
   "scripts": {
-    "start": "craco start",   
-    "build": "craco build",  
-    "test": "craco test",     
+    "start": "craco start",
+    "build": "craco build",
+    "test": "craco test",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
